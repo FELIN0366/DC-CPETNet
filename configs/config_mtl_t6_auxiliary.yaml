@@ -1,0 +1,104 @@
+# MTL T6 Auxiliary 配置 - T6 上下文辅助模式
+# 创建日期: 2026-05-07
+# 说明: 此文件包含 T6 Auxiliary 模式专属配置，会覆盖 base 配置
+# 特点: t6 作为疾病上下文提供者参与训练，注入 c6_deep 到 Beta Gate 和 t1 head
+
+mtl:
+  experiment_suffix: "t6_aux"       # T6 Auxiliary 模式后缀
+
+  hcgc_v4:
+    # [关键] T6 辅助模式全局开关 - T6 Auxiliary: true
+    t6_auxiliary_mode:
+      enabled: true                  # T6 Auxiliary 模式: t6 作为上下文提供者
+
+      # [专属] c6_deep L2 正则化 (仅 T6 Auxiliary 模式生效)
+      context_reg:
+        enabled: true                # 启用 c6_deep L2 正则化
+        lambda: 0.01                 # 正则化权重
+
+    # [专属] 梯度策略 (仅 T6 Auxiliary 模式生效)
+    gradient_strategy:
+      stage1_skip_injection: true    # Stage1: 不注入 (t6 尚未训练)
+      stage2_detach: true            # Stage2: 注入但隔离梯度
+      stage3_phase1_detach: true     # Stage3 Phase1: 注入但隔离梯度
+      stage3_phase2_detach: false    # Stage3 Phase2: 完全开放梯度
+
+  # 训练阶段配置 - T6 Auxiliary 模式专属值
+  training_stages:
+    # Stage0: T6 语义预热
+    v4_stage0_t6_semantic_warmstart:
+      enabled: true                  # T6 Auxiliary: 启用 Stage0
+      # ----------直接做成+KD的B模式-----------
+      feature_distillation:
+        enabled: true
+        teacher_feature: "dyn_feat"
+        student_feature: "dyn_feat"
+        loss: "mse"
+        normalize: true
+        detach_teacher: true
+        weight: 0.2                        # B: weight=0.2
+      teacher_usage: "logits_and_features"
+      loss_weights:
+        t6_ce: 1.0
+        t6_kd: 0.5
+        t6_feat: 0.2
+      #--------------------------------------------
+
+    # Stage1: 训练 t1 + t6 (弱监督)
+    v4_stage1_alpha_anchor:
+      active_tasks: ["t1", "t6"]     # T6 Auxiliary: t1 + t6
+      loss_weights:
+        t1: 1.0
+        t6: 0.05                     # T6 Auxiliary: 弱监督
+      t6_context:
+        inject: false                # Stage1: 不注入 (t6 尚未训练好)
+
+    # Stage2: 训练 t2-t5，注入 t6 上下文 (梯度隔离)
+    v4_stage2_beta_warmup:
+      active_tasks: ["t2", "t3", "t4", "t5"]
+      loss_weights:
+        t2: 1.0
+        t3: 1.2
+        t4: 1.0
+        t5: 1.0
+        t6: 0.0                      # Stage2: t6 loss=0
+      t6_context:
+        inject: true                 # T6 Auxiliary: 开始注入
+        detach: true                 # 梯度隔离
+
+    # Stage3 Phase1: 训练 t2-t5，注入 t6 上下文 (梯度隔离)
+    v4_stage3_joint_finetune:
+      v4_phase1_beta_warmup:
+        active_tasks: ["t2", "t3", "t4", "t5"]
+        loss_weights:
+          t2: 1.0
+          t3: 1.2
+          t4: 1.0
+          t5: 1.0
+        t6_context:
+          inject: true               # T6 Auxiliary: 注入
+          detach: true               # 梯度隔离
+
+      # Phase2: 训练 t1-t6，注入 t6 上下文 (完全开放梯度)
+      v4_phase2_joint:
+        active_tasks: ["t1", "t2", "t3", "t4", "t5", "t6"]  # T6 Auxiliary: 包含 t6
+        loss_weights:
+          t1: 1.0
+          t2: 1.0
+          t3: 1.2
+          t4: 1.0
+          t5: 1.0
+          t6: 0.05                   # T6 Auxiliary: 弱辅助
+        t6_context:
+          inject: true               # T6 Auxiliary: 注入
+          detach: false              # 完全开放梯度
+
+        # T6 Auxiliary: t6_deep_context 相关模块参与训练
+        lr_scale_override:
+          t6_deep_context_encoder: 0.3  # T6 Auxiliary 新增
+          t6_deep_feature_bridge: 0.5   # T6 Auxiliary 新增
+          beta_gates: 0.15
+          beta_gate_context: 0.2
+          beta_residual_experts: 0.6
+          beta_projectors: 0.8
+          task_heads: 0.5

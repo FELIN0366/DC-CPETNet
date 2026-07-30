@@ -1,0 +1,259 @@
+# AdaTT Clean Configuration
+# ========================
+#
+# Clean Architecture configuration for AdaTT baseline.
+# Minimal configuration - no ablation flags, no experiment_suffix.
+#
+# Architecture: adatt_clean_v4
+# Training Plan: adatt_clean_plan
+#
+# Date: 2026-05-27
+
+# Model configuration
+models:
+  default: "adatt_clean_v4"
+  adatt_clean_v4:
+    num_channels: 30
+    D_time: 16
+    T_mid: 24
+    num_fusion_layers: 2
+    use_shared_stream: true
+    hidden_dim: 48
+    static_dim: 16
+    dropout: 0.3
+    static_features:
+      enabled: true
+      static_dim: 16
+      num_features: 5
+      features: ["age", "gender", "weight", "height", "bmi"]
+    temporal_encoder:
+      type: cnn
+      T_mid: 24
+      use_multiscale: false
+      use_residual: false
+      use_masked_conv: true
+
+training:
+  plan: adatt_clean_plan
+  epochs: 100  # Total across all stages (plan controls actual distribution)
+  batch_size: 8
+  lr: 0.0003
+  weight_decay: 0.0001
+  gradient_clip: 1.0
+  random_seed: 42
+  optimizer:
+    type: adamw
+    lr: 0.0003
+    weight_decay: 0.0001
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.5
+    patience: 5
+    min_lr: 0.00001
+  early_stopping:
+    patience: 20
+    min_delta: 0.001
+
+data:
+  data_root: xx_path
+  label_file: xx_path
+  output_root: outputs/adatt_clean
+  use_mini: false
+  test_ratio: 0.2
+  L_win: 162
+  max_length: 200
+  stride: 1
+  holdout:
+    enabled: true
+    test_ratio: 0.2
+    random_seed: 42
+    save_split: true
+
+features:
+  adapt_mode: nine_graph
+  target_col_name: 运动心功能分级
+  num_channels: 30
+  derived_features:
+    base_enabled: true
+    o2pulse_derivatives:
+      enabled: true
+    vco2:
+      enabled: true
+
+# AdaTT specific settings (explicit, no branching)
+adatt:
+  num_fusion_layers: 2
+  use_shared_stream: true
+  context_dim: 40
+  tasks:
+    - t1
+    - t2
+    - t3
+    - t4
+    - t5
+  # No t6 in AdaTT baseline
+  # t6 is not trained, not used as context
+
+# MTL configuration for AdaTT Clean
+mtl:
+  enabled: true
+
+  # AdaTT Clean Architecture variant
+  architecture:
+    variant: "adatt_clean_v4"
+
+  # Task definitions (same as other MTL configs)
+  tasks:
+    t1:
+      name: "运动心功能分级"
+      num_classes: 3
+      loss_name: "ce"
+      is_binary: false
+      dropout: 0.3
+      label_column: "运动心功能分级"
+    t2:
+      name: "运动耐量"
+      num_classes: 3
+      loss_name: "ldam"
+      is_binary: false
+      dropout: 0.3
+      label_column: "运动耐量"
+    t3:
+      name: "标准心电运动负荷试验"
+      num_classes: 2
+      loss_name: "bce"
+      is_binary: true
+      dropout: 0.3
+      label_column: "标准心电运动负荷试验"
+    t4:
+      name: "运动中换气肺功能"
+      num_classes: 2
+      loss_name: "ldam"
+      is_binary: true
+      dropout: 0.3
+      label_column: "运动中换气肺功能"
+    t5:
+      name: "心率储备"
+      num_classes: 2
+      loss_name: "ldam"
+      is_binary: true
+      dropout: 0.3
+      label_column: "心率储备"
+
+  # [关键] AdaTT Clean: 不使用任何 checkpoint 初始化
+  # 所有模块使用默认随机初始化
+  checkpoints:
+    load_single_task_pretrained: false  # 禁用预训练加载
+    t1_checkpoint: null                 # 不使用 t1 checkpoint
+    t3_checkpoint: null                 # 不使用 t3 checkpoint
+    t6_checkpoint: null                 # AdaTT 没有 t6
+
+  # Holdout 配置
+  holdout:
+    enabled: true
+    test_ratio: 0.2
+    random_seed: 42
+    save_split: true
+    split_file: "results/holdout_split_info_mtl.json"
+    results_dir: "results"
+
+  # 静态特征配置
+  static:
+    enabled: true
+    static_dim: 16
+    num_features: 5
+    pft_enabled: false
+
+  # 不确定性加权配置
+  uncertainty_weighting:
+    enabled: true
+    tasks: ["t1", "t2", "t3", "t4", "t5"]
+
+  # SwanLab 监控策略
+  monitoring:
+    legacy_v3_diagnostics_enabled: false
+    v4_minimal_logging: true
+
+  # Excel logger 配置
+  excel_logger:
+    enabled: true
+
+  # Metrics weights
+  metrics:
+    weighted_macro_f1_weights:
+      t1: 0.20
+      t2: 0.20
+      t3: 0.25
+      t4: 0.20
+      t5: 0.15
+
+# Loss configuration
+loss:
+  type: "CrossEntropy"
+  gamma: 1.5
+  alpha: auto
+  dice_smooth: 1.0
+  ldam_max_m: 0.5
+  ldam_scale_s: 30
+
+# Runtime configuration
+runtime:
+  mode: train_mtl
+  gpu: 0
+  n_folds: 5
+  disable_swanlab: false
+  swanlab_mode: cloud
+  swanlab_logdir: swanlab_local
+  model_path: null
+  skip_kfold: false
+  eval_only: false
+
+# Debug configuration
+debug:
+  verbose: true
+  log_interval: 10
+  check_logits: true
+  save_debug_log: false
+
+# Augmentation configuration
+augmentation:
+  enabled: false
+  intensity_scaling: false
+  intensity_range: [0.85, 1.15]
+  time_shift: false
+  time_shift_range: [-2, 2]
+  gaussian_noise: false
+  noise_std: 0.05
+
+# Sampler configuration
+sampler:
+  enabled: false
+  replacement: true
+  drop_last: true
+
+# Task configuration
+task:
+  mode: single_label
+  label_separator: ';'
+  min_label_freq: 50
+  target_col_name: '运动心功能分级'
+
+# Experiment configuration (no suffix - clean architecture)
+experiment:
+  suffix: ''
+
+# Nine-graph configuration
+nine_graph:
+  attention_preset: core_slopes
+  coupling_strength: 1.5
+  attention_weights:
+    enabled: true
+
+# Known-T6 Context configuration
+known_t6_context:
+  enabled: false
+  source_column: '匹配的第一大类'
+
+# No ablation section - clean architecture
+# No experiment_suffix - clean architecture
+# No mode switching - clean architecture

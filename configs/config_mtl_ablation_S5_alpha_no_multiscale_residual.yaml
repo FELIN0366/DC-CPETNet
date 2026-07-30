@@ -1,0 +1,24 @@
+# Ablation S5: Alpha No Multiscale+Residual (Supplementary)
+# 创建日期: 2026-05-15
+# 说明: Alpha trunk 禁用多尺度卷积和残差连接
+# 预期: Alpha trunk 编码能力评估
+
+mtl:
+  experiment_suffix: "ablation_S5_alpha_no_multiscale_residual"
+
+  hcgc_v4:
+    # S5 消融配置: Alpha 禁用多尺度+残差
+    ablation:
+      single_shared_alpha: false         # Alpha/Beta 双引擎
+      beta_shared_only: false            # Beta 正常专家体系
+      alpha_no_prior: false              # 保留 prior mask
+      no_t3_private: false               # 保留 t3_private
+      no_group245: false                 # 保留 group_245
+      no_beta_gates: false               # 保留 Beta Gates
+      alpha_no_pmgt: false               # 保留 PMGT
+      alpha_no_multiscale_residual: true # 核心 flag: 禁用多尺度+残差
+
+  # Alpha trunk 配置覆盖: 单尺度非残差
+  alpha:
+    use_multiscale: false              # 禁用多尺度 (原为 true)
+    use_residual: false                # 禁用残差 (原为 true)

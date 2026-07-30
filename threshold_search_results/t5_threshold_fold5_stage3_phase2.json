@@ -1,0 +1,14 @@
+{
+  "task_key": "t5",
+  "fold": 5,
+  "checkpoint_stage": "stage3_phase2",
+  "search_split": "val",
+  "best_threshold": 0.6950000000000003,
+  "best_f1_on_val": 1.132797645567555,
+  "baseline_f1_at_0.5_on_val": 0.855072463768116,
+  "improvement": 0.03385254203638832,
+  "selection_metric": "recovered_from_best_result_226_original_excel",
+  "source_excel": "results\\holdout_trials\\best_result_226_original_mtl_eval_tmp.xlsx",
+  "recovered_at": "2026-07-27 13:50:49",
+  "note": "Recovered validation threshold summary from best_result_226 original mtl_eval workbook; full threshold sweep curve was not present in the source folder."
+}

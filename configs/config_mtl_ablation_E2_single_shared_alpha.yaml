@@ -1,0 +1,45 @@
+# Ablation E2: Single Shared Alpha Trunk
+# 创建日期: 2026-05-15
+# 说明: 所有任务 t1-t5 共享 Alpha trunk (Beta 完全禁用)
+# 预期: Alpha 性能上限基准
+
+mtl:
+  experiment_suffix: "ablation_E2_single_shared_alpha"
+
+  # 任务分支覆盖 (E2: 所有任务走 Alpha)
+  # build_task_specs_from_config 从此处读取 branch 属性
+  tasks:
+    t1:
+      branch: "alpha"
+    t2:
+      branch: "alpha"                  # 改为 Alpha (原为 beta)
+    t3:
+      branch: "alpha"                  # 改为 Alpha (原为 beta)
+    t4:
+      branch: "alpha"                  # 改为 Alpha (原为 beta)
+    t5:
+      branch: "alpha"                  # 改为 Alpha (原为 beta)
+    t6:
+      branch: "alpha"
+
+  hcgc_v4:
+    # E2 消融配置: Beta 完全禁用, 所有任务走 Alpha
+    ablation:
+      single_shared_alpha: true          # 核心 flag: Beta 禁用, t2-t5 走 Alpha
+      beta_shared_only: false            # 互斥
+      alpha_no_prior: false              # 保留 prior mask
+      no_t3_private: false               # N/A (Beta 已禁用)
+      no_group245: false                 # N/A (Beta 已禁用)
+      no_beta_gates: false               # N/A (Beta 已禁用)
+      alpha_no_pmgt: false               # 保留 PMGT
+      alpha_no_multiscale_residual: false  # 保留多尺度+残差
+
+      # E2 专属 loss_weights (Stage1 和 Phase2 使用)
+      # t3 权重较高（极度不平衡任务），t6 权重较低（辅助任务）
+      loss_weights:
+        t1: 1.0
+        t2: 1.0
+        t3: 1.2
+        t4: 1.0
+        t5: 1.0
+        t6: 0.5

@@ -1,0 +1,23 @@
+# Ablation A: Logits KD Only (无 Feature Distillation)
+# 创建日期: 2026-05-08
+# 说明: Stage0 仅使用 logits KD，不使用 feature distillation
+# 对比基线: B/C/D 的 feature distillation 是否有收益
+
+mtl:
+  experiment_suffix: "ablation_A_logitsonly"
+
+  hcgc_v4:
+    t6_auxiliary_mode:
+      enabled: true
+
+  # Stage0 配置 - A: logits only
+  training_stages:
+    v4_stage0_t6_semantic_warmstart:
+      enabled: true
+      feature_distillation:
+        enabled: false                     # A: 不使用 feature distillation
+      teacher_usage: "logits_only"
+      loss_weights:
+        t6_ce: 1.0
+        t6_kd: 0.5
+        # t6_feat: 不设置 (feature distillation 禁用)

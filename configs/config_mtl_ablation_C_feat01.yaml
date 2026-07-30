@@ -1,0 +1,29 @@
+# Ablation C: Logits KD + dyn feature KD weight=0.1
+# 创建日期: 2026-05-08
+# 说明: Stage0 使用 logits KD + dyn_feat feature distillation (weight=0.1)
+# 对比: 较弱的 feature KD 约束是否更优
+
+mtl:
+  experiment_suffix: "ablation_C_feat01"
+
+  hcgc_v4:
+    t6_auxiliary_mode:
+      enabled: true
+
+  # Stage0 配置 - C: logits + feature KD weight=0.1
+  training_stages:
+    v4_stage0_t6_semantic_warmstart:
+      enabled: true
+      feature_distillation:
+        enabled: true
+        teacher_feature: "dyn_feat"
+        student_feature: "dyn_feat"
+        loss: "mse"
+        normalize: true
+        detach_teacher: true
+        weight: 0.1                        # C: weight=0.1
+      teacher_usage: "logits_and_features"
+      loss_weights:
+        t6_ce: 1.0
+        t6_kd: 0.5
+        t6_feat: 0.1

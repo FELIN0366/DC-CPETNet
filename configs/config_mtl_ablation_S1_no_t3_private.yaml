@@ -1,0 +1,31 @@
+# Ablation S1: No t3_private Expert (Supplementary)
+# 创建日期: 2026-05-15
+# 说明: 移除 t3_private expert (t3 最关键任务专属专家)
+# 预期: t3 任务性能下降, 验证专属专家必要性
+
+mtl:
+  experiment_suffix: "ablation_S1_no_t3_private"
+
+  hcgc_v4:
+    # S1 消融配置: 移除 t3_private expert
+    ablation:
+      single_shared_alpha: false         # Alpha/Beta 双引擎
+      beta_shared_only: false            # Beta 正常专家体系
+      alpha_no_prior: false              # 保留 prior mask
+      no_t3_private: true                # 核心 flag: 移除 t3_private
+      no_group245: false                 # 保留 group_245
+      no_beta_gates: false               # 保留 Beta Gates
+      alpha_no_pmgt: false               # 保留 PMGT
+      alpha_no_multiscale_residual: false  # 保留多尺度+残差
+
+    # Beta 专家收缩: 仅 shared + group_245
+    beta:
+      residual_experts:
+        shared: {capacity: "medium", description: "Beta 分支共享专家"}
+        group_245: {capacity: "medium", description: "t2/t4/t5 组专家"}
+        # t3_private: 已移除
+
+    # Gate 路由调整 (t3 仅 shared)
+    gate_routing:
+      beta:
+        t3: ["shared"]                   # 原为 ["shared", "t3_private"], 现仅 shared

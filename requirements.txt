@@ -1,0 +1,110 @@
+# DC-CPETNet Python dependencies
+# Updated from the local conda environment: DL
+# Python: 3.10.0
+# CUDA/PyTorch environment observed locally: CUDA 12.8, PyTorch nightly 2.10.0.dev20251124+cu128
+
+# ============================================================
+# PyTorch
+# ============================================================
+# The local DL environment uses locally installed CUDA 12.8 nightly wheels:
+#   torch==2.10.0.dev20251124+cu128
+#   torchvision==0.25.0.dev20251124+cu128
+#   torchaudio==2.10.0.dev20251124+cu128
+#
+# For a public release, do not keep local file:// wheel paths in requirements.txt.
+# Install the matching PyTorch build for your CUDA/Python platform first, for example:
+#   pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+#
+# If you use a stable PyTorch build instead, make sure it is compatible with the saved checkpoints.
+torch>=2.10.0
+torchvision>=0.25.0
+torchaudio>=2.10.0
+
+# ============================================================
+# Core data processing
+# ============================================================
+numpy==2.2.6
+pandas==2.3.3
+openpyxl==3.1.5
+scipy==1.15.3
+xlrd==2.0.2
+xlsxwriter==3.2.9
+
+# ============================================================
+# Machine learning and metrics
+# ============================================================
+scikit-learn==1.7.2
+joblib==1.5.3
+threadpoolctl==3.6.0
+
+# ============================================================
+# Visualization and figure generation
+# ============================================================
+matplotlib==3.10.8
+seaborn==0.13.2
+plotly==6.5.2
+pyecharts==2.0.9
+pillow==12.1.0
+
+# ============================================================
+# Configuration
+# ============================================================
+PyYAML==6.0.3
+
+# ============================================================
+# Experiment tracking and logging
+# ============================================================
+swanlab==0.7.6
+swanboard==0.1.9b1
+tensorboardX==2.6.4
+
+# ============================================================
+# Deep learning utilities
+# ============================================================
+einops==0.8.2
+transformers==5.2.0
+huggingface_hub==1.5.0
+tokenizers==0.22.2
+safetensors==0.7.0
+vit-pytorch==1.17.5
+
+# ============================================================
+# Dimensionality reduction and analysis utilities
+# ============================================================
+umap-learn==0.5.11
+numba==0.64.0
+llvmlite==0.46.0
+pynndescent==0.6.0
+networkx==3.4.2
+
+# ============================================================
+# CLI and terminal utilities
+# ============================================================
+tqdm==4.67.1
+rich==13.9.4
+click==8.3.1
+typer==0.24.1
+prettytable==3.17.0
+
+# ============================================================
+# Optional interactive visualization scripts
+# ============================================================
+streamlit==1.53.1
+altair==6.0.0
+pydeck==0.9.1
+
+# ============================================================
+# Common runtime dependencies present in the DL environment
+# ============================================================
+requests==2.32.5
+urllib3==2.6.3
+certifi==2026.1.4
+charset-normalizer==3.4.4
+idna==3.11
+packaging==26.0
+protobuf==6.33.4
+psutil==7.2.1
+python-dateutil==2.9.0.post0
+pytz==2025.2
+tzdata==2025.3
+typing_extensions==4.15.0

@@ -1,0 +1,19 @@
+# Ablation S4: Alpha No PMGT (Supplementary)
+# 创建日期: 2026-05-15
+# 说明: Alpha 禁用 PMGT (PriorMaskedGlobalTransformer), 使用 FlattenMLP
+# 预期: PMGT 注意力机制贡献评估
+
+mtl:
+  experiment_suffix: "ablation_S4_alpha_no_pmgt"
+
+  hcgc_v4:
+    # S4 消融配置: Alpha 禁用 PMGT
+    ablation:
+      single_shared_alpha: false         # Alpha/Beta 双引擎
+      beta_shared_only: false            # Beta 正常专家体系
+      alpha_no_prior: false              # prior mask 随 PMGT 禁用自动失效
+      no_t3_private: false               # 保留 t3_private
+      no_group245: false                 # 保留 group_245
+      no_beta_gates: false               # 保留 Beta Gates
+      alpha_no_pmgt: true                # 核心 flag: 禁用 PMGT, 使用 FlattenMLP
+      alpha_no_multiscale_residual: false  # 保留多尺度+残差

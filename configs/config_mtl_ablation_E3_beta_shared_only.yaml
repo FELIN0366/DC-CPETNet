@@ -1,0 +1,27 @@
+# Ablation E3: Beta Shared-Only Expert
+# 创建日期: 2026-05-15
+# 说明: Beta 仅使用 shared expert (移除 group_245 和 t3_private)
+# 预期: 专家特异性贡献评估
+
+mtl:
+  experiment_suffix: "ablation_E3_beta_shared_only"
+
+  hcgc_v4:
+    # E3 消融配置: Beta 仅 shared expert
+    ablation:
+      single_shared_alpha: false         # Alpha/Beta 双引擎
+      beta_shared_only: true             # 核心 flag: Beta 仅 shared expert
+      alpha_no_prior: false              # 保留 prior mask
+      no_t3_private: false               # 被 beta_shared_only 覆盖
+      no_group245: false                 # 被 beta_shared_only 覆盖
+      no_beta_gates: false               # Gate 保留, 但路由简化
+      alpha_no_pmgt: false               # 保留 PMGT
+      alpha_no_multiscale_residual: false  # 保留多尺度+残差
+
+    # Gate 路由简化 (E3: 所有任务仅 shared)
+    gate_routing:
+      beta:
+        t2: ["shared"]                   # 原为 ["shared", "group_245"]
+        t3: ["shared"]                   # 原为 ["shared", "t3_private"]
+        t4: ["shared"]                   # 原为 ["shared", "group_245"]
+        t5: ["shared"]                   # 原为 ["shared", "group_245"]

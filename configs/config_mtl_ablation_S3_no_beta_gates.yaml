@@ -1,0 +1,34 @@
+# Ablation S3: No Beta Gates (Supplementary)
+# 创建日期: 2026-05-15
+# 说明: 禁用 Beta Gates, 使用固定混合权重
+# 预期: 任务特异性路由贡献评估
+
+mtl:
+  experiment_suffix: "ablation_S3_no_beta_gates"
+
+  hcgc_v4:
+    # S3 消融配置: 禁用 Beta Gates + 固定混合权重
+    ablation:
+      single_shared_alpha: false         # Alpha/Beta 双引擎
+      beta_shared_only: false            # Beta 正常专家体系
+      alpha_no_prior: false              # 保留 prior mask
+      no_t3_private: false               # 保留 t3_private
+      no_group245: false                 # 保留 group_245
+      no_beta_gates: true                # 核心 flag: 禁用 Beta Gates
+      alpha_no_pmgt: false               # 保留 PMGT
+      alpha_no_multiscale_residual: false  # 保留多尺度+残差
+
+      # 固定混合权重 (替代 Gate 学习)
+      fixed_mixing_weights:
+        t2:
+          shared: 0.5
+          group_245: 0.5
+        t3:
+          shared: 0.3
+          t3_private: 0.7                  # t3 侧重专属专家
+        t4:
+          shared: 0.5
+          group_245: 0.5
+        t5:
+          shared: 0.5
+          group_245: 0.5

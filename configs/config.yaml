@@ -1,0 +1,506 @@
+# =============================================================================
+# CPET 疾病分类 - 统一配置文件
+# =============================================================================
+# 说明:
+#   1. 所有参数均在此文件中定义，不接受任何硬编码
+#   2. 命令行参数可覆盖此文件中的配置
+#   3. 模型特定参数在对应模型名称下配置
+# =============================================================================
+experiment:
+  suffix: "t3"                        # 实验后缀，用于消融实验结果文件命名
+                                              # 建议命名: wo_static, wo_multiscale, wo_prior_mask, wo_stage2
+                                              # 留空 "" 则不添加后缀
+# =============================================================================
+# 数据配置
+# =============================================================================
+data:
+  data_root: xx_path
+  label_file: xx_path
+  output_root: xx_path
+  use_mini: false                    # 是否使用mini数据集
+  test_ratio: 0.2                    # 测试集比例
+  L_win: 200                         # 固定长度模式下的时间窗口长度
+  max_length: 330                    # 变长模式下的最大序列长度
+  stride: 1                          # 滑动窗口步长
+
+  # ===========================================================================
+  # Holdout 测试集配置 (新增)
+  # ===========================================================================
+  # 用于 K-Fold 交叉验证前的独立测试集划分
+  # 流程: 全局数据 → 8:2 切分 → Dev_Set (用于 K-Fold) + Test_Set (冻结)
+  # ===========================================================================
+  holdout:
+    enabled: true                    # 是否启用独立测试集划分
+    test_ratio: 0.2                  # 独立测试集比例 (20%)
+    random_seed: 42                  # 全局切分随机种子 (与 K-Fold seed 独立)
+    save_split: true                 # 是否保存划分结果到文件
+
+# =============================================================================
+# 特征配置
+# =============================================================================
+features:
+  adapt_mode: "nine_graph"            # 可选: full, select, medical, nine_graph
+  target_col_name: "心率储备"   # 标签列名称 ['运动心功能分级','运动耐量','标准心电运动负荷试验','运动中换气肺功能','心率储备']
+  num_channels: 30                   # 特征通道数 (nine_graph 模式: 30 = 22原始 + 4基础衍生 + 3氧脉搏 + 1 V'CO2)
+
+  # ===========================================================================
+  # 可插拔衍生特征配置 (新增)
+  # ===========================================================================
+  # 基础衍生特征 (可插拔): PP, OUES, EqO2_COP, HR_diff
+  # 氧脉搏导数特征 (可插拔): O2Pulse, d(O2P)/dt, d2(O2P)/dt2
+  # ===========================================================================
+  derived_features:
+    # [新增] 基础衍生特征开关 (默认 true，保持向后兼容)
+    base_enabled: true
+
+    # 基础衍生特征列表 (仅当 base_enabled=true 时生效)
+    base:
+      - "PP"           # 脉压差 = Psys - Pdia
+      - "OUES"         # 氧摄取效率 = VO2 / log10(VE)
+      - "EqO2_COP"     # 心肺最佳点 = EqO2滑动窗口最小值
+      - "HR_diff"      # 心率变化率 = d(HR)/dt
+
+    # 氧脉搏导数特征 (可插拔，用于鉴别泵衰竭与缺血)
+    # 医学动机：O2 Pulse 平台期的提前出现是心肌收缩力绝对受限的标志
+    # 若效果不佳可禁用此模块
+    o2pulse_derivatives:
+      enabled: true   # nine_graph 模式推荐启用
+      features:
+        - "O2Pulse"      # 氧脉搏 = VO2 / HR (SV代理指标)
+        - "d(O2P)/dt"    # 氧脉搏一阶导数 (变化速率)
+        - "d2(O2P)/dt2"  # 氧脉搏二阶导数 (加速度，检测平台期拐点)
+
+    # V'CO2 特征配置 (九图模式)
+    vco2:
+      enabled: true  # nine_graph 模式自动启用
+
+  # 特征分组索引自动从 FEATURE_CONFIG 派生，不再硬编码
+  # 如需自定义，可通过 features.adapt_mode 切换: full, select, medical, nine_graph
+  # channel_groups:
+  #   full: [...]
+  #   select: [...]
+  #   medical: [...]
+  #   nine_graph: [...]
+
+# =============================================================================
+# 训练配置
+# =============================================================================
+training:
+  epochs: 160
+  batch_size: 16
+  lr: 0.0008                         # 学习率
+  weight_decay: 0.01                # 权重衰减
+  gradient_clip: 1.0                 # 梯度裁剪
+  random_seed: 3407 #3407，215，42
+
+  # [新增] 最佳模型保存指标选择
+  # 针对 4 分类长尾分布问题，推荐使用 macro_f1 或 auprc
+  # 可选: "macro_f1" (默认，关注少数类), "auprc" (关注精度-召回权衡), "loss" (原始方式)
+  save_best_metric: "loss"
+
+  # 优化器配置
+  optimizer:
+    type: "AdamW"
+    lr: 0.0008
+    weight_decay: 0.01
+
+  # 学习率调度器
+  scheduler:
+    type: "ReduceLROnPlateau"
+    factor: 0.5
+    patience: 10
+    min_lr: 1.0e-6
+
+  # 早停配置
+  # 注意: 早停现在基于 save_best_metric 而非 loss
+  early_stopping:
+    patience: 50
+    min_delta: 0.0001
+
+# =============================================================================
+# 损失函数配置
+# =============================================================================
+loss:
+  type: "Dice"          # FocalLoss, CrossEntropy, CombinedLoss, Dice, LDAM
+  gamma: 1.5                    # Focal loss 的聚焦参数
+  alpha: auto                 # 类别权重: auto(自动计算), balanced, 或手动指定
+
+  # [新增] Dice Loss 参数
+  dice_smooth: 1.0              # Dice 平滑系数
+
+  # [新增] LDAM Loss 参数
+  ldam_max_m: 0.5               # 最大 margin
+  ldam_scale_s: 30              # scale 参数
+
+  # [新增] LCRLoss 参数 (仅多标签模式生效)
+  lcr_enabled: true
+  lcr_lambda_co: 0.01
+  lcr_epsilon: 1.0e-6
+
+  # [新增] 二分类配置 (仅 n_classes==2 时生效)
+  # 用于强制模型关注少数类，解决二分类少数类不被关注的问题
+  binary:
+    enabled: false              # 强制启用二分类模式 (false=自动检测)
+    auto_detect: true           # 自动检测二分类场景 (n_classes==2)
+    pos_weight: auto            # 正类权重: auto(自动计算), 或手动数值如 5.0
+                                # auto 模式下: pos_weight = n_negative / n_positive
+
+
+# =============================================================================
+# 消融实验配置 (新增)
+# =============================================================================
+# 用于区分不同实验的结果文件，所有输出文件将添加后缀: _{experiment.suffix}
+# 影响文件:
+#   - holdout_split_info_{suffix}.json
+#   - kfold_results_{model}_{mode}_{suffix}.json
+#   - kfold_summary_metrics_{model}_{mode}_{suffix}.xlsx
+#   - kfold_train_stats_{model}_{mode}_{suffix}.json
+#   - best_*_fold*_{suffix}.pth
+#
+# 建议命名规范:
+#   - "wo_static":     剔除静态特征 (ablation: cpet_only)
+#                      证明双模态融合机制的补充和修正作用
+#   - "wo_multiscale": 剔除多尺度卷积 (use_multiscale: false)
+#   - "wo_prior_mask": 剔除先验掩码 (graph_ablation: global_only)
+#   - "attention_weights": 启用注意力权重预设 (attention_weights.enabled: true)
+# =============================================================================
+
+
+# =============================================================================
+# 模型配置
+# =============================================================================
+models:
+  # 默认模型
+  default: "HDSTGCN"  # ['HDSTGCN', 'STFinalNet', 'resnet', 'lstm', 'mednet', 'CNNGAF', 'KESTNet']
+
+  # HDSTGCN 配置
+  HDSTGCN:
+    hidden_dim: 16                   # 隐藏层维度 (兼容参数)
+    dropout: 0.5
+    D_time: 16                       # 时序编码维度
+    use_variable_length: false        # 使用变长序列模式
+    graph_ablation: flatten_only     # graph_ablation: "hierarchical", "prior_masked", "global_only", "flatten_only", "pooling_only"
+
+    # ===========================================================================
+    # Stage2 消融实验配置 (新增)
+    # ===========================================================================
+    # graph_ablation 模式说明:
+    #   - prior_masked:   PriorMaskedGlobalTransformer (跨变量注意力 + 先验掩码)
+    #                      用于验证跨变量交互建模的有效性
+    #   - global_only:    直接全局注意力 (无子图，无先验掩码)
+    #                      用于评估先验掩码的贡献
+    #   - hierarchical:   层次化融合 (子图GCN + 全局GCN)
+    #                      原有架构，用于对比
+    #   - flatten_only:   移除跨变量交互，直接展平 + MLP 降维
+    #                      用于证明跨变量交互建模是必要的
+    #   - pooling_only:   用全局池化替代展平，通道级聚合 + MLP (新增)
+    #                      用于验证通道级聚合是否足够，与 flatten_only 对比
+    # ===========================================================================
+
+    # [新增] Flatten MLP 配置 (仅 flatten_only 模式生效)
+    flatten_mlp:
+      use_two_layer: false      # 单层 MLP (480→48)，参数量最接近基线
+      dropout: 0.3              # Dropout 率
+      use_layer_norm: true      # 使用 LayerNorm (与现有架构一致)
+
+    # [新增] Pooling_only 配置 (pooling_only 模式生效)
+    # 用全局池化替代 Flatten，验证通道级聚合是否足够
+    # 参数量: 单层 ~1.6k (vs flatten_only ~23k)
+    pooling_only:
+      pooling_type: "avg"          # "avg" 或 "max"
+      mlp_layers: 1                # 1 或 2
+      hidden_dim: null             # 仅 mlp_layers=2 时生效
+      dropout: 0.3
+      use_layer_norm: true
+
+    # 静态特征融合配置 (EHR + PFT 多模态)
+    # ===========================================================================
+    # Stage3 消融实验配置 (可插拔)
+    # ===========================================================================
+    # ablation 模式说明:
+    #   - full:        双模态融合 (CPET动态特征48维 + EHR静态特征16维 = 64维)
+    #                   用于验证双模态融合机制的补充和修正作用
+    #   - cpet_only:   仅动态特征 (剔除EHR静态特征，分类器输入48维)
+    #                   用于评估静态特征的贡献
+    #   - static_only: 仅静态特征 (剔除CPET动态特征，分类器输入16维)
+    #                   用于消融参考，验证动态特征的主导作用
+    # ===========================================================================
+    static_features:
+      enabled: true                  # 是否启用静态特征融合模块
+      static_dim: 16                 # 静态编码器输出维度
+      num_features: 5                # 静态特征数量 (动态更新)
+      ablation: "full"          # 消融模式: full, static_only, cpet_only
+      features: ["age", "gender", "weight", "height", "bmi"]
+
+      # PFT (肺通气功能) 配置 (新增)
+      pft_enabled: false             # 启用 PFT 特征
+      pft_file: "xx_path"
+      skip_missing_pft: true         # 跳过缺失 PFT 的患者
+      pft_fill_method: "none"        # none=跳过, zero=零填充
+      pft_features: []               # 动态填充
+
+    # 时序编码器配置
+    temporal_encoder:
+      type: "cnn"                    # "gru" (现有) 或 "cnn" (新增)
+      T_mid: 24                      # CNN 中间时序维度
+
+      # === 可插拔模块配置 ===
+      use_multiscale: true          # 默认 false，回退为单尺度
+      use_residual: true            # 默认 false，关闭跨层相加
+      multiscale_kernels: [3, 5, 7]  # 开启多尺度时的感受野组合
+      block1_kernel: 7               # Stage 1 卷积核大小
+      block2_kernel: 5               # Stage 2 卷积核大小
+
+      # === [新增] Masked Convolution 消融配置 ===
+      use_masked_conv: false          # 默认 true (使用掩膜)
+                                      # 设为 false 时强制填充，padding 混入特征
+
+      # === [新增] 时序提纯消融配置 ===
+      # ablation 模式说明:
+      #   - "full":        Baseline (Stage1+Stage2+Stage3+TimeAttn) 渐进降维 + 时间注意力
+      #   - "merged_conv_global_pool": 合并 Conv + 全局池化 (移除渐进降维和时间注意力)
+      ablation: "full"               # full | merged_conv_global_pool
+
+    # 先验门控配置 (PriorWarmStart)
+    prior_gate:
+      gamma_init: 1.0                # 热启动初始值 (vs 0.0 冷启动)
+      gamma_min: 0.1                 # 先验保护下限
+      gamma_lr_scale: 0.3            # gamma 学习率缩放
+
+    # 通道注意力配置 (禁用)
+    channel_attention:
+      enabled: false                 # 禁用通道注意力
+      init_value: 1.0                # 初始权重值
+
+    # 特征选择消融配置 (新增)
+    feature_ablation:
+      enabled: false                 # 是否启用特征选择消融
+      mode: "full"                   # full, remove_weak, strong_only, remove_group
+      weak_channels: [9, 13]         # 弱特征索引 (SpO2, BF 等)
+      strong_channels: [0, 1, 3, 22, 23, 24, 25, 26, 27, 28]  # 强特征索引 (含氧脉搏导数)
+      remove_group: ""               # 要移除的组名 (G0, G1, G2, G3)
+
+  # STFinalNet 配置 (基线模型)
+  STFinalNet:
+    hidden_dim: 16
+    dropout: 0.3
+    # ablation 从上方 ablation.mode 读取
+    use_var_embedding: true          # 变量身份嵌入
+    use_dynamic_graph: true          # 动态图拓扑
+    var_embed_dim: 8                 # 变量嵌入维度
+    use_variable_length: false       # 不支持变长序列
+    use_static_features: true        # 启用静态特征融合
+    static_dim: 16
+
+  # ResNet1D 配置 (基线模型)
+  ResNet1D:
+    hidden_dim: 64
+    dropout: 0.3
+    use_variable_length: false
+    use_static_features: true
+    static_dim: 16
+
+  # LSTMNet 配置 (基线模型)
+  LSTMNet:
+    hidden_dim: 64
+    num_layers: 2
+    dropout: 0.5
+    use_variable_length: false       # LSTM 使用 pack_padded_sequence
+    use_static_features: true
+    static_dim: 16
+
+  # MedNet 配置 (基线模型)
+  MedNet:
+    hidden_dim: null                 # 不使用
+    hr_idx: null                     # null=自动检测 HR 通道索引
+    dropout: 0.3
+    use_variable_length: false
+    use_static_features: true
+    static_dim: 16
+
+  # CNN-GAF 配置 (基线模型, EMBC 2022)
+  # 将时间序列转换为 GADF 图像后使用 CNN 分类
+  CNNGAF:
+    image_size: 64                   # GADF 图像大小 (PAA 降采样后)
+    cnn_channels: [16, 32]           # CNN 隐藏通道维度
+    attention_dim: 16                # 注意力池化隐藏维度
+    dropout: 0.3
+    use_static_features: true        # 启用静态特征融合
+    static_dim: 16
+
+  # KEST-Net 配置 (基线模型, BIBE 2024)
+  # Knowledge-Enhanced Spatio-Temporal Network
+  # 双视图架构: 时空特征视图 + 知识增强系统特征视图
+  KESTNet:
+    hidden_dim: 64                   # 隐藏层维度
+    num_gcn_layers: 2                # GCN 层数
+    num_transformer_layers: 2        # 时序 Transformer 层数
+    num_cst_layers: 2                # CST Block 迭代次数
+    num_heads: 4                     # 注意力头数
+    dropout: 0.3                     # Dropout 率
+    use_variable_length: true        # 支持变长序列
+    use_static_features: true        # 启用静态特征融合
+    static_dim: 16
+
+  # 兼容旧配置名 (别名)
+  lstm:
+    hidden_dim: 64
+    num_layers: 2
+    dropout: 0.5
+
+  resnet:
+    hidden_dim: 64
+
+  mednet:
+    hidden_dim: null
+
+# =============================================================================
+# 运行模式配置
+# =============================================================================
+runtime:
+  mode: "kfold"                      # train, inference, kfold
+  gpu: 0                             # GPU设备号
+  n_folds: 5                         # K折数量
+  disable_swanlab: true              # 禁用SwanLab
+  model_path: null                   # 推理模式下的模型路径
+
+  # ===========================================================================
+  # 断点恢复配置 (新增)
+  # ===========================================================================
+  # 用于跳过已完成的 K-Fold 训练，直接进行测试集评估
+  # 前提条件:
+  #   1. 已完成 K-Fold 训练
+  #   2. 存在模型文件: models/best_xxx_foldN.pth
+  #   3. 存在统计量文件: results/kfold_train_stats_xxx.json
+  #   4. 存在划分文件: results/holdout_split_info.json
+  # ===========================================================================
+  skip_kfold: false                  # 跳过 K-Fold 训练，直接评估测试集
+
+# =============================================================================
+# 数据增强配置
+# =============================================================================
+augmentation:
+  enabled: true                      # 是否启用数据增强
+  intensity_scaling: true            # 强度缩放 (85%-115%)
+  intensity_range: [0.85, 1.15]
+  time_shift: true                   # 时间平移
+  time_shift_range: [-2, 2]
+  gaussian_noise: true               # 高斯噪声
+  noise_std: 0.05
+
+# =============================================================================
+# WeightedRandomSampler 配置 [已废弃]
+# =============================================================================
+# ⚠️ 废弃原因：
+# 1. 在极度不平衡二分类场景（阳性率 < 20%）导致严重过拟合
+# 2. 让模型反复看到极少数阳性样本，死记硬背噪声纹理而非学习有效特征
+# 3. 在任务3（心电图，阳性率9.8%）和任务5（心率储备用尽，阳性率19.5%）
+#    中导致性能崩塌（少数类 Recall=0）
+#
+# 推荐替代方案（在 loss 配置中设置）：
+# - Dice Loss: loss.type: "Dice" - 直接优化 F1-Score 重叠度
+# - LDAM Loss: loss.type: "LDAM" - 决策边界重塑
+# - BCEWithLogitsLoss: loss.type: "CrossEntropy" + pos_weight - 基线方案
+# =============================================================================
+# 用于长尾分布问题的动态采样策略
+# 与 loss.alpha="auto" (Loss加权) 正交，可独立开关进行对比实验
+# 二分类模式下推荐启用此功能
+sampler:
+  enabled: false                      # 启用 WeightedRandomSampler [已禁用]
+  replacement: true                  # 有放回抽样 (必须为 True)
+  drop_last: false                    # 丢弃不完整的 batch
+
+task:
+  mode: "single_label"                # single_label, multi_label
+  label_separator: ";"                # 多标签分隔符
+  min_label_freq: 50                  # 最小标签频率
+
+# =============================================================================
+# Known-T6 Context 实验配置 (新增)
+# =============================================================================
+# 在 classifier 前拼接已知 t6 标签的 one-hot 编码
+# 测试已知疾病大类信息对当前分类任务的上下文增强效果
+#
+# 使用场景:
+#   当 target_col_name 设置为其他任务（如"运动耐量"、"心率储备"）时，
+#   启用 known_t6_context 提供疾病大类信息作为上下文特征
+#
+# 设计原则:
+#   仅在 classifier head 前拼接 t6 one-hot
+#   不修改 trunk / PMGT / FlattenProjector / loss / training schedule
+# =============================================================================
+known_t6_context:
+  enabled: false                      # 是否启用 Known-T6 Context (默认关闭)
+  source_column: "匹配的第一大类"    # t6 标签来源列名
+
+# =============================================================================
+# 调试配置
+# =============================================================================
+debug:
+  verbose: true                      # 详细输出
+  log_interval: 1000                 # 日志打印间隔 (步数)
+  check_logits: true                 # 检查 logits 健康度
+  save_debug_log: true               # 保存调试日志
+
+# =============================================================================
+# 九图模式配置 (基于 Wasserman 九图)
+# =============================================================================
+# 核心斜率注意力权重预设仅对 graph_ablation: "prior_masked" 模式生效
+# global_only 模式不支持此功能
+# 实验表明: 禁用核心斜率权重预设效果更优 (让模型自适应学习注意力权重)
+# =============================================================================
+nine_graph:
+  attention_preset: "core_slopes"   # 核心斜率注意力预设
+  coupling_strength: 1.5            # 跨子系统耦合强度
+
+  # [新增] 禁止自动启用开关 (用于消融实验)
+  # 默认 false，nine_graph 模式会自动启用 vco2 和 o2pulse_derivatives
+  # 设为 true 时尊重 yaml 中 derived_features 的配置
+  disable_auto_enabling: false
+
+  # ===========================================================================
+  # 核心斜率注意力权重预设配置 (可插拔)
+  # ===========================================================================
+  # 仅当 graph_ablation: "prior_masked" 时生效
+  # 强化关键生理关系的初始注意力权重，如 V'O2-HR, V'O2-O2Pulse, V'E-V'CO2
+  # 实验结果: 禁用时效果更优，建议保持 enabled: false
+  # ===========================================================================
+  attention_weights:
+    enabled: false                  # 是否启用核心斜率权重预设 (实验表明禁用效果更优)
+    # 预设权重 (对称矩阵，自动注入):
+    #   V'O2-HR: 2.0      (心血管响应效率)
+    #   V'O2-O2Pulse: 2.5 (核心循环连接)
+    #   V'E-V'CO2: 2.0    (通气效率斜率)
+    #   EqCO2-PETCO2: 1.8 (死腔通气检测)
+# =============================================================================
+# 衍生特征消融实验配置示例 (w/o Derived Features Ablation)
+# =============================================================================
+# 目的: 验证高阶衍生指标 (V'CO2, 氧脉搏导数, 基础衍生特征) 对分类性能的贡献
+#
+# 配置方法:
+#   1. 设置 experiment.suffix: "wo_derived"
+#   2. 设置 features.derived_features.base_enabled: false
+#   3. 设置 features.derived_features.o2pulse_derivatives.enabled: false
+#   4. 设置 features.derived_features.vco2.enabled: false
+#   5. 设置 nine_graph.disable_auto_enabling: true
+#
+# 预期结果:
+#   - 特征数: 22 (仅原始CPET特征 + EHR静态特征)
+#   - 邻接矩阵: 22x22
+#   - 缓存文件名后缀: _f22.npy
+#
+# 示例配置:
+# experiment:
+#   suffix: "wo_derived"
+#
+# features:
+#   derived_features:
+#     base_enabled: false
+#     o2pulse_derivatives:
+#       enabled: false
+#     vco2:
+#       enabled: false
+#
+# nine_graph:
+#   disable_auto_enabling: true
+# =============================================================================

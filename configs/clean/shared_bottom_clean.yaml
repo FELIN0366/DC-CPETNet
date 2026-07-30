@@ -1,0 +1,112 @@
+# Shared-bottom Clean V4 Configuration
+# Minimal configuration for hard parameter sharing baseline
+
+model:
+  architecture: shared_bottom_clean_v4
+
+  # Encoder dimensions
+  num_channels: 30  # nine_graph mode (22 original + 8 medical derivatives)
+  D_time: 16        # Temporal encoding dimension
+  T_mid: 24         # Intermediate temporal dimension
+
+  # Training settings
+  dropout: 0.3
+  hidden_dim: 48    # Task head output dimension
+  static_dim: 16    # Static feature encoding dimension
+
+  # Static features (EHR)
+  num_static_features: 5  # age, gender, weight, height, bmi
+
+training:
+  plan: shared_bottom_clean_plan
+
+  # Standard 4-stage training (no Stage0, no t6 KD)
+  # Stage1: t1 anchor (20 epochs)
+  # Stage2: t2-t5 warmup (20 epochs)
+  # Phase1: t2-t5 strengthening (18 epochs)
+  # Phase2: joint finetune (42 epochs)
+
+  epochs: 100  # Total epochs across all stages
+
+  # Optimizer
+  optimizer: adamw
+  lr: 0.0003
+  weight_decay: 0.01
+
+  # Batch settings
+  batch_size: 8
+
+  # Device
+  device: cuda
+
+# Loss configuration (shared across all architectures)
+loss:
+  t1:
+    type: CrossEntropy
+    weight: 1.0
+
+  t2:
+    type: CrossEntropy
+    weight: 1.0
+
+  t3:
+    type: BCEWithLogitsLoss  # Binary classification
+    pos_weight: 2.0  # Handle imbalance
+    weight: 1.2
+
+  t4:
+    type: LDAM  # Label Distribution Aware Margin
+    weight: 1.0
+
+  t5:
+    type: LDAM
+    weight: 1.0
+
+# Data configuration
+data:
+  mode: nine_graph  # 30 features mode
+  adapt_mode: nine_graph
+
+  # Paths (use project defaults)
+  excel_dir: xx_path
+
+  # Train/Val/Test split
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+  # Cross-validation
+  n_folds: 5
+  fold: 0  # Current fold (0-4)
+
+# Evaluation
+evaluation:
+  # Metrics
+  metrics:
+    - macro_f1
+    - weighted_f1
+    - accuracy
+    - precision
+    - recall
+
+  # Threshold search (for binary tasks t3, t4, t5)
+  threshold_search:
+    enabled: true
+    method: grid_search
+    range: [0.3, 0.7]
+    step: 0.05
+
+  # Holdout evaluation
+  holdout_enabled: true
+
+# SwanLab logging
+logging:
+  swanlab_enabled: true
+  project: CPET_MTL_TaskSharing
+  experiment: shared_bottom_clean_v4
+
+# Output
+output:
+  save_dir: outputs/shared_bottom_clean_v4
+  save_model: true
+  save_predictions: true
+  save_metrics: true

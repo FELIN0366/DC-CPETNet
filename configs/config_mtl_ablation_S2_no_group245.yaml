@@ -1,0 +1,33 @@
+# Ablation S2: No group_245 Expert (Supplementary)
+# 创建日期: 2026-05-15
+# 说明: 移除 group_245 expert (t2/t4/t5 组专家)
+# 预期: t2/t4/t5 任务性能下降, 验证组专家必要性
+
+mtl:
+  experiment_suffix: "ablation_S2_no_group245"
+
+  hcgc_v4:
+    # S2 消融配置: 移除 group_245 expert
+    ablation:
+      single_shared_alpha: false         # Alpha/Beta 双引擎
+      beta_shared_only: false            # Beta 正常专家体系
+      alpha_no_prior: false              # 保留 prior mask
+      no_t3_private: false               # 保留 t3_private
+      no_group245: true                  # 核心 flag: 移除 group_245
+      no_beta_gates: false               # 保留 Beta Gates
+      alpha_no_pmgt: false               # 保留 PMGT
+      alpha_no_multiscale_residual: false  # 保留多尺度+残差
+
+    # Beta 专家收缩: 仅 shared + t3_private
+    beta:
+      residual_experts:
+        shared: {capacity: "medium", description: "Beta 分支共享专家"}
+        # group_245: 已移除
+        t3_private: {capacity: "strong", description: "t3 关键任务专属专家"}
+
+    # Gate 路由调整 (t2/t4/t5 仅 shared)
+    gate_routing:
+      beta:
+        t2: ["shared"]                   # 原为 ["shared", "group_245"], 现仅 shared
+        t4: ["shared"]                   # 原为 ["shared", "group_245"], 现仅 shared
+        t5: ["shared"]                   # 原为 ["shared", "group_245"], 现仅 shared

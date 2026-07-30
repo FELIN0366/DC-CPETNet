@@ -1,0 +1,376 @@
+# MTL 基础配置 - 两种模式共有
+# 创建日期: 2026-05-07
+# 说明: 此文件包含 Baseline 和 T6 Auxiliary 模式的共有配置
+# 使用方式: 与 config_mtl_baseline.yaml 或 config_mtl_t6_auxiliary.yaml 合并
+
+mtl:
+  enabled: true
+
+  # [v4] Protected Dual-Engine T6-guided MTL v4 架构
+  architecture:
+    variant: "protected_dual_engine_t6_guided_v4"
+
+  # [v4] ProtectedDualEngineMTL_v4 共有配置
+  hcgc_v4:
+    # Alpha 分支 (继承 v3: 删除CGC)
+    alpha:
+      cgc_enabled: false
+      description: "Alpha直接使用trunk输出，无专家聚合"
+
+    # Beta 分支 (继承 v3: 收缩为三专家)
+    beta:
+      cgc_enabled: true
+      residual_experts:
+        shared: {capacity: "medium", description: "Beta 分支共享专家"}
+        group_245: {capacity: "medium", description: "t2/t4/t5 组专家"}
+        t3_private: {capacity: "strong", description: "t3 关键任务专属专家"}
+
+    # Gate 路由集合 (继承 v3: 全部2维)
+    gate_routing:
+      beta:
+        t2: ["shared", "group_245"]
+        t3: ["shared", "t3_private"]
+        t4: ["shared", "group_245"]
+        t5: ["shared", "group_245"]
+
+    # Gate 温度调度 (继承 v3)
+    gate:
+      tau_start: 2.0
+      tau_mid: 1.0
+      tau_end: 0.7
+      entropy_reg: 0.002
+      entropy_reg_epochs_ratio: 0.5
+
+    # [v4 核心] T6 Deep Feature Context 模块定义
+    # enabled 为模块开关，实际启用状态由模型初始化时综合判断:
+    #   - t6_auxiliary_mode.enabled=false (Baseline) → 实际 disabled (Gate创建40维)
+    #   - t6_auxiliary_mode.enabled=true  (T6辅助) → 实际 enabled  (Gate创建56维)
+    t6_deep_context:
+      enabled: true                    # 模块开关: true (T6辅助时生效) / false (强制禁用)
+      source: "dyn_feat_t6"             # 来源: alpha_interactors["t6"]
+      apply_to_beta_gate: true          # Injection A: Beta Gate context 扩展 (40 -> 56)
+      apply_to_t1_head: true            # Injection B: t1 上下文增强
+
+      context_encoder:
+        input_dim: 48                   # dyn_feat_t6 维度
+        hidden_dim: 32                  # 隐藏层维度
+        output_dim: 16                  # c6_deep 维度
+        dropout: 0.2
+
+      bridge:
+        c6_deep_dim: 16                 # 必须匹配 context_encoder.output_dim
+        dyn_feat_dim: 48                # dyn_feat_t1 维度
+        alpha_init: -2.2                # sigmoid ≈ 0.1 (弱注入)
+
+    # [v4] 指标权重
+    metrics:
+      weighted_macro_f1_weights:
+        t1: 0.20                        # 主任务，功能分级
+        t2: 0.20                        # 二分类任务
+        t3: 0.25                        # 极度不平衡，最困难
+        t4: 0.20                        # 二分类任务
+        t5: 0.15                        # 心率储备，相对简单
+
+    # v4 初始化配置
+    initialization:
+      policy: "checkpoint_inheritance"    # checkpoint_inheritance | from_scratch_structured
+      identity_strength: 0.1              # 残差专家 near-identity 初始化
+
+      # Trunk 分支初始化
+      alpha_trunk:
+        source: "t1_checkpoint"           # alpha_trunk 来源: t1_checkpoint | t3_checkpoint | None
+      beta_trunk:
+        source: "None"           # beta_trunk 来源: t1_checkpoint | t3_checkpoint | None
+
+  # 任务定义 (6个任务)
+  tasks:
+    t1:
+      name: "运动心功能分级"
+      num_classes: 3
+      branch: "alpha"              # Alpha 引擎 (多尺度 + PMGT)
+      loss_name: "ce"              # 加权交叉熵
+      is_binary: false
+      dropout: 0.3
+      label_column: "运动心功能分级"
+
+    t2:
+      name: "运动耐量"
+      num_classes: 3
+      branch: "beta"               # Beta 引擎 (单尺度 + Flatten)
+      loss_name: "ldam"            # LDAM 多分类
+      is_binary: false
+      dropout: 0.3
+      label_column: "运动耐量"
+
+    t3:
+      name: "标准心电运动负荷试验"
+      num_classes: 2
+      branch: "beta"
+      loss_name: "bce"             # BCE + pos_weight
+      is_binary: true
+      dropout: 0.3
+      label_column: "标准心电运动负荷试验"
+
+    t4:
+      name: "运动中换气肺功能"
+      num_classes: 2
+      branch: "beta"
+      loss_name: "ldam"            # LDAM 二分类
+      is_binary: true
+      dropout: 0.3
+      label_column: "运动中换气肺功能"
+
+    t5:
+      name: "心率储备"
+      num_classes: 2
+      branch: "beta"
+      loss_name: "ldam"            # LDAM 二分类
+      is_binary: true
+      dropout: 0.3
+      label_column: "心率储备"
+
+    t6:
+      name: "匹配的第一大类"
+      num_classes: null            # 动态计算 (从数据集)
+      branch: "alpha"
+      loss_name: "ce"              # 加权交叉熵 + KD
+      is_binary: false
+      dropout: 0.3
+      label_column: "匹配的第一大类"
+
+  # 三阶段训练配置 (共有部分: epochs, freeze_modules, checkpoint_save_metric)
+  # 注意: active_tasks, loss_weights, t6_context 由各模式专属配置文件定义
+  training_stages:
+    enabled: true
+
+    # Stage0: T6 Semantic Warm-start (共有定义，enabled由模式配置控制)
+    v4_stage0_t6_semantic_warmstart:
+      epochs: 10
+      freeze_modules:
+        - "beta_branch"
+        - "t1_head"
+      train_modules:
+        - "alpha_trunk"
+        - "alpha_interactors.t6"
+        - "static_encoders.t6"
+        - "classifiers.t6"
+      use_t6_teacher_kd: true
+      kd_temperature: 2.0
+      loss_weights:
+        t6_ce: 1.0
+        t6_kd: 0.5
+        t6_feat: 0.2
+      checkpoint_policy: "save_last_only"
+      teacher_checkpoint: "single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold3.pth"  # 九图消融：best_HDSTGCN_CPET_New_nine_graph_fold1_wo_PriorMasking.pth 正常：models/best_HDSTGCN_CPET_New_nine_graph_fold3.pth
+      teacher_usage: "logits_and_features"
+      allow_weight_copy: false
+
+      # Feature Distillation 配置 (v4.1 新增)
+      feature_distillation:
+        enabled: true                      # 是否启用 feature distillation
+        teacher_feature: "dyn_feat"        # Teacher 蒸馏特征: dyn_feat (48d)
+        student_feature: "dyn_feat"        # Student 对齐特征: dyn_feat (48d)
+        loss: "mse"                        # 损失函数: mse / smooth_l1
+        normalize: true                    # L2 归一化后再计算损失
+        detach_teacher: true               # Teacher 特征 detach (不回传梯度)
+        weight: 0.2                        # Feature KD 权重 (对应 loss_weights.t6_feat)
+
+    # Stage1: Alpha Anchor
+    v4_stage1_alpha_anchor:
+      epochs: 20
+      freeze_modules:
+        - "beta_branch"
+        - "beta_gates"
+        - "beta_residual_experts"
+        - "t6_deep_context_encoder"
+        - "t6_deep_feature_bridge"
+      use_kd_t1: false
+      kd_weight: 0.0
+      checkpoint_save_metric: "macro_f1_t1"
+
+    # Stage2: Beta Warmup
+    v4_stage2_beta_warmup:
+      epochs: 20
+      freeze_modules: ["alpha_branch", "log_vars_t1_t6"]
+      use_kd: false
+      checkpoint_save_metric: "mean_macro_f1_t2_to_t5"
+
+    # Stage3: Joint Finetune
+    v4_stage3_joint_finetune:
+      epochs: 60
+      freeze_alpha_epochs_ratio: 0.3
+
+      # Phase1: Beta Warmup
+      v4_phase1_beta_warmup:
+        freeze_modules: ["alpha_trunk", "alpha_interactors"]
+        use_kd: false
+        checkpoint_save_metric: "mean_macro_f1_t2_to_t5"
+
+      # Phase2: Joint
+      v4_phase2_joint:
+        freeze_modules: ["alpha_trunk"]
+        use_kd: false
+        checkpoint_save_metric: "weighted_macro_f1_t1_to_t5"
+        early_stop_patience: 8
+        early_stop_min_delta: 0.001
+
+  # 参数组学习率缩放 (共有)
+  lr_scale:
+    alpha_base: 0.1                # Alpha base 专家极小学习率
+    alpha_experts: 0.3             # Alpha 其他专家小学习率
+    alpha_gates: 0.8               # Alpha 门控中等学习率
+    beta_base: 0.3                 # Beta base 专家小到中等学习率
+    beta_experts: 0.8              # Beta 其他专家中等学习率
+    beta_gates: 1.0                # Beta 门控正常学习率
+    task_heads: 0.8                # 任务头中等学习率
+    log_vars: 1.0                  # 不确定性权重正常学习率
+
+  # Alpha 引擎配置 (共有)
+  alpha:
+    share_encoder: true               # t1 和 t6 共享 Alpha 编码器
+    use_multiscale: true              # 多尺度卷积 (k=3,5,7)
+    use_residual: true                # 残差连接
+    multiscale_kernels: [3, 5, 7]
+    block1_kernel: 7
+    block2_kernel: 5
+    D_time: 16                        # 时序编码维度
+    T_mid: 24                         # CNN 中间时序维度
+    hidden_dim: 48                    # PMGT 输出维度
+    num_heads: 2                      # PMGT 注意力头数
+
+  # Beta 引擎配置 (共有)
+  beta:
+    share_encoder: true               # t2~t5 共享 Beta 编码器
+    use_multiscale: false             # 单尺度卷积
+    use_residual: false               # 无残差
+    block1_kernel: 7
+    block2_kernel: 5
+    D_time: 16
+    T_mid: 24
+    hidden_dim: 48                    # Flatten MLP 输出维度
+
+  # 阈值搜索配置 (共有)
+  eval:
+    binary_threshold_search:
+      enabled_tasks: ["t3", "t4", "t5"]
+      mode: "search"
+      save_dir: "threshold_search_results"
+    fixed_thresholds:
+      t3: 0.5
+      t4: 0.5
+      t5: 0.6
+
+  # [新增 - 2026-05-25] T3 Boundary Stabilization
+  # 在 stage3_phase2 启用 t3_anchor_loss，锚定到该 fold 历史最佳 t3 checkpoint
+  t3_anchor:
+    enabled: true                        # 是否启用 t3_anchor_loss
+    lambda: 0.2                          # Anchor loss 权重
+    teacher_stage: "auto_best_t3"        # Teacher 来源: auto_best_t3 / stage2 / stage3_phase1
+    loss_type: "mse_prob"                # 损失类型: mse_prob / bce_prob / kl_logit
+
+    # auto_best_t3 选择策略:
+    # - 从 stage2 和 stage3_phase1 checkpoint 中选择 t3 Macro-F1 更高者作为 teacher
+    # - 如果两者都不存在，自动禁用 t3_anchor_loss
+
+  # Holdout 配置 (共有)
+  holdout:
+    enabled: true
+    ratio: 0.2
+    seed: 42
+    split_file: "auto"
+    eval_after_each_fold: true
+    save_fold_stats: true
+    results_dir: "results"
+
+  # 静态特征配置 (共有)
+  static:
+    enabled: true
+    static_dim: 16
+    num_features: 5
+    pft_enabled: false
+
+  # 检查点配置 (共有)
+  checkpoints:
+    load_single_task_pretrained: true
+    t6_checkpoint: "single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold3.pth" #"single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold1_wo_PriorMasking.pth" #"single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold3.pth"
+    t1_checkpoint: "single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold2_class_运动心功能分级.pth" #"single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold4_运动心功能分级_woPriorMask.pth" # #
+    t3_checkpoint: "single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold2_class_标准心电运动负荷试验_bs32dp3flatten_LDAM.pth" #"single_best_models/best_HDSTGCN_CPET_New_nine_graph_fold1_心率储备_final.pth" #
+
+  # 不确定性加权配置 (共有 - t6不参与)
+  uncertainty_weighting:
+    enabled: true
+    tasks: ["t1", "t2", "t3", "t4", "t5"]
+    freeze_t6_log_var: true
+
+  # SwanLab 监控策略 (共有)
+  monitoring:
+    legacy_v3_diagnostics_enabled: false
+    v4_minimal_logging: true
+
+  # Excel logger 配置 (共有)
+  excel_logger:
+    enabled: true
+
+# 基础训练配置 (共有)
+training:
+  epochs: 100                         # 被 training_stages 覆盖
+  batch_size: 16                      # 基础批次大小 (梯度累加到 32)
+  effective_batch_size: 32            # 有效批次大小
+  accumulation_steps: 2               # 梯度累加步数
+  lr: 0.0003                          # 基础学习率
+  weight_decay: 0.001
+  gradient_clip: 1.0
+  random_seed: 3407
+
+  optimizer:
+    type: "Adam"
+    lr: 0.0003
+    weight_decay: 0.001
+
+  scheduler:
+    type: "ReduceLROnPlateau"
+    factor: 0.5
+    patience: 10
+    min_lr: 1.0e-6
+
+  early_stopping:
+    patience: 20
+    min_delta: 0.001
+
+# 数据配置 (共有)
+data:
+  data_root: "xx_path"
+  label_file: "xx_path"
+  output_root: "results"
+  use_mini: false
+  test_ratio: 0.2
+  L_win: 200
+  max_length: 330
+  stride: 1
+
+# 特征配置 (共有)
+features:
+  adapt_mode: "nine_graph"
+  num_channels: 30
+  derived_features:
+    base_enabled: true
+    o2pulse_derivatives:
+      enabled: true
+    vco2:
+      enabled: true
+
+# 运行时配置 (共有)
+runtime:
+  mode: "train_mtl"
+  gpu: 0
+  n_folds: 5
+  disable_swanlab: true
+  swanlab_mode: "cloud"
+  swanlab_logdir: "swanlab_local"
+
+# 调试配置 (共有)
+debug:
+  verbose: true
+  log_interval: 10
+  check_logits: true
+  save_debug_log: false

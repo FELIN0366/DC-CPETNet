@@ -1,0 +1,7 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Agent and Codex working directories
+.agents/
+.codex_work/

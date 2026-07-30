@@ -1,0 +1,20 @@
+# Ablation S6: Alpha No Prior + Teacher No Prior (Supplementary)
+# 创建日期: 2026-05-15
+# 说明: Alpha 禁用 prior mask, Teacher 模型也禁用 prior (无先验蒸馏)
+# 预期: 双侧先验消融, 验证先验蒸馏链贡献
+
+mtl:
+  experiment_suffix: "ablation_S6_alpha_no_prior_teacher_no_prior"
+
+  hcgc_v4:
+    # S6 消融配置: Alpha + Teacher 双侧禁用 prior
+    ablation:
+      single_shared_alpha: false         # Alpha/Beta 双引擎
+      beta_shared_only: false            # Beta 正常专家体系
+      alpha_no_prior: true               # 核心 flag: Alpha 禁用 prior mask
+      no_t3_private: false               # 保留 t3_private
+      no_group245: false                 # 保留 group_245
+      no_beta_gates: false               # 保留 Beta Gates
+      alpha_no_pmgt: false               # 保留 PMGT (仅禁用 prior)
+      alpha_no_multiscale_residual: false  # 保留多尺度+残差
+      teacher_no_prior: true             # 核心 flag: Teacher 也禁用 prior

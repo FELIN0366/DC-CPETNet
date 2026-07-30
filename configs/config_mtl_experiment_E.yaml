@@ -1,0 +1,86 @@
+# MTL 实验E 配置 - no_t6_context_but_train_t6
+# 创建日期: 2026-05-12
+# 说明: Baseline + t6 ordinary weak supervision
+# 核心语义: t6 参与训练和 loss，但不作为 deep context source
+# 与 Baseline 的区别: Stage1 和 Stage3 Phase2 包含 t6 作为弱监督任务
+# 与 T6 Auxiliary 的区别: 无 c6_deep, 无 context injection, beta_gate context_dim=40
+
+mtl:
+  experiment_suffix: "E_no_t6_context_but_train_t6"
+
+  hcgc_v4:
+    # [关键] T6 辅助模式全局开关 - 实验E: false (保持 baseline 架构)
+    t6_auxiliary_mode:
+      enabled: false
+
+    # [实验E专用] no_t6_context_but_train_t6 开关
+    no_t6_context_but_train_t6:
+      enabled: true
+
+  # 训练阶段配置 - 实验E 专属值
+  training_stages:
+    # Stage0: 实验E 禁用 (与 baseline 一致)
+    v4_stage0_t6_semantic_warmstart:
+      enabled: false
+
+    # Stage1: t1 + t6 (弱监督)
+    v4_stage1_alpha_anchor:
+      active_tasks: ["t1", "t6"]
+      loss_weights:
+        t1: 1.0
+        t6: 0.1
+      t6_context:
+        inject: false
+      checkpoint_save_metric: "macro_f1_t1"
+
+    # Stage2: 训练 t2-t5 (与 baseline 完全一致)
+    v4_stage2_beta_warmup:
+      active_tasks: ["t2", "t3", "t4", "t5"]
+      loss_weights:
+        t2: 1.0
+        t3: 1.2
+        t4: 1.0
+        t5: 1.0
+      t6_context:
+        inject: false
+
+    # Stage3
+    v4_stage3_joint_finetune:
+      # Phase1: 训练 t2-t5 (与 baseline 完全一致)
+      v4_phase1_beta_warmup:
+        active_tasks: ["t2", "t3", "t4", "t5"]
+        loss_weights:
+          t2: 1.0
+          t3: 1.2
+          t4: 1.0
+          t5: 1.0
+        t6_context:
+          inject: false
+        checkpoint_save_metric: "mean_macro_f1_t2_to_t5"
+
+      # Phase2: t1-t5 + t6 (弱监督)
+      v4_phase2_joint:
+        active_tasks: ["t1", "t2", "t3", "t4", "t5", "t6"]
+        loss_weights:
+          t1: 1.0
+          t2: 1.0
+          t3: 1.2
+          t4: 1.0
+          t5: 1.0
+          t6: 0.05
+        t6_context:
+          inject: false
+          detach: false
+        checkpoint_save_metric: "weighted_macro_f1_t1_to_t5"
+        early_stop_patience: 8
+        early_stop_min_delta: 0.001
+
+        # 实验E: t6_deep_context 相关模块不训练 (与 baseline 一致)
+        lr_scale_override:
+          t6_deep_context_encoder: 0.0
+          t6_deep_feature_bridge: 0.0
+          beta_gates: 0.15
+          beta_gate_context: 0.2
+          beta_residual_experts: 0.6
+          beta_projectors: 0.8
+          task_heads: 0.5

@@ -1,0 +1,74 @@
+# MTL Baseline 配置 - T6 完全剔除模式
+# 创建日期: 2026-05-07
+# 说明: 此文件包含 Baseline 模式专属配置，会覆盖 base 配置
+# 特点: t6 不参与训练，不参与 loss 计算，不注入上下文
+
+mtl:
+  experiment_suffix: "_test"              # Baseline 模式后缀为空
+
+  hcgc_v4:
+    # [关键] T6 辅助模式全局开关 - Baseline: false
+    t6_auxiliary_mode:
+      enabled: false                 # Baseline 模式: t6 完全剔除
+
+      # context_reg 在 Baseline 模式下不生效，无需定义
+
+  # 训练阶段配置 - Baseline 模式专属值
+  training_stages:
+    # Stage0: Baseline 模式禁用
+    v4_stage0_t6_semantic_warmstart:
+      enabled: false                 # Baseline: 禁用 Stage0
+
+    # Stage1: 仅训练 t1
+    v4_stage1_alpha_anchor:
+      active_tasks: ["t1"]           # Baseline: 仅 t1 (剔除 t6)
+      loss_weights:
+        t1: 1.0
+        # t6: 不参与
+
+    # Stage2: 训练 t2-t5，不注入 t6 上下文
+    v4_stage2_beta_warmup:
+      active_tasks: ["t2", "t3", "t4", "t5"]
+      loss_weights:
+        t2: 1.0
+        t3: 1.2
+        t4: 1.0
+        t5: 1.0
+      t6_context:
+        inject: false                 # Baseline: 不注入
+
+    # Stage3 Phase1: 训练 t2-t5，不注入 t6 上下文
+    v4_stage3_joint_finetune:
+      v4_phase1_beta_warmup:
+        active_tasks: ["t2", "t3", "t4", "t5"]
+        loss_weights:
+          t2: 1.0
+          t3: 1.2
+          t4: 1.0
+          t5: 1.0
+        t6_context:
+          inject: false               # Baseline: 不注入
+
+      # Phase2: 训练 t1-t5，剔除 t6
+      v4_phase2_joint:
+        active_tasks: ["t1", "t2", "t3", "t4", "t5"]  # Baseline: 剔除 t6
+        loss_weights:
+          t1: 1.0
+          t2: 1.0
+          t3: 1.2
+          t4: 1.0
+          t5: 1.0
+          # t6: 不参与
+        t6_context:
+          inject: false               # Baseline: 不注入
+          detach: false               # (无意义，因为不注入)
+
+        # Baseline: t6_deep_context 相关模块不训练
+        lr_scale_override:
+          t6_deep_context_encoder: 0.0  # 不训练
+          t6_deep_feature_bridge: 0.0   # 不训练
+          beta_gates: 0.15
+          beta_gate_context: 0.2
+          beta_residual_experts: 0.6
+          beta_projectors: 0.8
+          task_heads: 0.5
